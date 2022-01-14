@@ -213,7 +213,7 @@ func (k *klocksmith) process(stop <-chan struct{}) error {
 			break
 		}
 
-		klog.Warningf("error waiting for an ok-to-reboot: %v", err)
+		klog.Warningf("Error waiting for an ok-to-reboot: %v", err)
 	}
 
 	klog.Info("Checking if node is already unschedulable")
@@ -274,7 +274,7 @@ func (k *klocksmith) process(stop <-chan struct{}) error {
 
 		if err := k.pg.Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{}); err != nil {
 			// Continue anyways, the reboot should terminate it.
-			klog.Errorf("failed terminating pod %q: %v", pod.Name, err)
+			klog.Errorf("Failed terminating pod %q: %v", pod.Name, err)
 		}
 	}
 

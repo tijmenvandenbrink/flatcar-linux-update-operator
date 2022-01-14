@@ -279,6 +279,7 @@ func (k *klocksmith) process(stop <-chan struct{}) error {
 	}
 
 	// Wait for the pods to delete completely.
+	//nolint:varnamelen
 	wg := sync.WaitGroup{}
 
 	for _, pod := range pods {
@@ -410,6 +411,7 @@ func (k *klocksmith) waitForOkToReboot(ctx context.Context) error {
 	// reboot and the controller telling us to do it.
 	ctx, _ = watchtools.ContextWithOptionalTimeout(ctx, maxOperatorResponseTime)
 
+	//nolint:varnamelen
 	ev, err := watchtools.UntilWithoutRetry(ctx, watcher, k8sutil.NodeAnnotationCondition(shouldRebootSelector))
 	if err != nil {
 		return fmt.Errorf("waiting for annotation %q failed: %w", constants.AnnotationOkToReboot, err)
@@ -457,6 +459,7 @@ func (k *klocksmith) waitForNotOkToReboot(ctx context.Context) error {
 	// of what the operator checks is the correct thing to do.
 	ctx, _ = watchtools.ContextWithOptionalTimeout(ctx, maxOperatorResponseTime)
 
+	//nolint:varnamelen
 	ev, err := watchtools.UntilWithoutRetry(ctx, watcher, watchtools.ConditionFunc(func(event watch.Event) (bool, error) {
 		switch event.Type {
 		case watch.Error:
@@ -537,9 +540,11 @@ func sleepOrDone(d time.Duration, done <-chan struct{}) {
 }
 
 // splitNewlineEnv splits newline-delimited KEY=VAL pairs and puts values into given map.
+//nolint:varnamelen
 func splitNewlineEnv(m map[string]string, envs string) {
 	sc := bufio.NewScanner(strings.NewReader(envs))
 	for sc.Scan() {
+		//nolint:gomnd
 		spl := strings.SplitN(sc.Text(), "=", 2)
 
 		// Just skip empty lines or lines without a value.
@@ -617,6 +622,7 @@ func getVersionInfo(filesPathPrefix string) (*versionInfo, error) {
 		return nil, fmt.Errorf("getting OS release info: %w", err)
 	}
 
+	//nolint:varnamelen
 	vi := &versionInfo{
 		id:      osrelease["ID"],
 		group:   updateconf["GROUP"],

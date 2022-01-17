@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/fake"
-	fakecorev1 "k8s.io/client-go/kubernetes/typed/core/v1/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/klog/v2"
 
@@ -32,7 +31,8 @@ func Test_Creating_new_agent(t *testing.T) {
 	t.Run("returns_agent_when_all_dependencies_are_satisfied", func(t *testing.T) {
 		t.Parallel()
 
-		client, err := agent.New(validTestConfig(t))
+		validConfig, _, _ := validTestConfig(t, testNode())
+		client, err := agent.New(validConfig)
 		if err != nil {
 			t.Fatalf("Unexpected error creating new agent: %v", err)
 		}
@@ -58,7 +58,7 @@ func Test_Creating_new_agent(t *testing.T) {
 			t.Run(n, func(t *testing.T) {
 				t.Parallel()
 
-				testConfig := validTestConfig(t)
+				testConfig, _, _ := validTestConfig(t, testNode())
 				mutateConfigF(testConfig)
 
 				client, err := agent.New(testConfig)
@@ -87,14 +87,14 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-//nolint:funlen,cyclop,gocognit,gocyclo // Just many test cases.
+//nolint:funlen,cyclop,gocognit // Just many test cases.
 func Test_Running_agent(t *testing.T) {
 	t.Parallel()
 
 	t.Run("reads_host_configuration_by", func(t *testing.T) {
 		t.Parallel()
 
-		testConfig := validTestConfig(t)
+		testConfig, _, _ := validTestConfig(t, testNode())
 
 		expectedGroup := "configuredGroup"
 		expectedOSID := "testID"
@@ -138,7 +138,7 @@ func Test_Running_agent(t *testing.T) {
 	t.Run("prefers_Flatcar_group_from_etc_over_usr", func(t *testing.T) {
 		t.Parallel()
 
-		testConfig := validTestConfig(t)
+		testConfig, _, _ := validTestConfig(t, testNode())
 
 		expectedGroup := "configuredGroup"
 
@@ -159,7 +159,7 @@ func Test_Running_agent(t *testing.T) {
 	t.Run("ignores_when_etcd_update_configuration_file_does_not_exist", func(t *testing.T) {
 		t.Parallel()
 
-		testConfig := validTestConfig(t)
+		testConfig, _, _ := validTestConfig(t, testNode())
 
 		expectedGroup := "imageGroup"
 
@@ -206,7 +206,7 @@ func Test_Running_agent(t *testing.T) {
 		t.Parallel()
 
 		t.Run("configured_Node_does_not_exist", func(t *testing.T) {
-			configWithNoNodeObject := validTestConfig(t)
+			configWithNoNodeObject, _, _ := validTestConfig(t, testNode())
 			configWithNoNodeObject.Clientset = fake.NewSimpleClientset()
 
 			err := getAgentRunningError(t, configWithNoNodeObject)
@@ -219,7 +219,7 @@ func Test_Running_agent(t *testing.T) {
 			t.Run("usr_update_config_file_is_not_available", func(t *testing.T) {
 				t.Parallel()
 
-				testConfig := validTestConfig(t)
+				testConfig, _, _ := validTestConfig(t, testNode())
 
 				usrUpdateConfigFile := filepath.Join(testConfig.HostFilesPrefix, "/usr/share/flatcar/update.conf")
 
@@ -236,7 +236,7 @@ func Test_Running_agent(t *testing.T) {
 			t.Run("etc_update_config_file_is_not_readable", func(t *testing.T) {
 				t.Parallel()
 
-				testConfig := validTestConfig(t)
+				testConfig, _, _ := validTestConfig(t, testNode())
 
 				updateConfigFile := filepath.Join(testConfig.HostFilesPrefix, "/etc/flatcar/update.conf")
 
@@ -251,7 +251,7 @@ func Test_Running_agent(t *testing.T) {
 			})
 
 			t.Run("os_release_file_is_not_readable", func(t *testing.T) {
-				testConfig := validTestConfig(t)
+				testConfig, _, _ := validTestConfig(t, testNode())
 
 				osReleasePath := filepath.Join(testConfig.HostFilesPrefix, "/etc/os-release")
 
@@ -275,12 +275,7 @@ func Test_Running_agent(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
 
-				testConfig := validTestConfig(t)
-
-				node, err := testConfig.Clientset.CoreV1().Nodes().Get(context.TODO(), testConfig.NodeName, metav1.GetOptions{})
-				if err != nil {
-					t.Fatalf("Failed getting test Node object: %v", err)
-				}
+				testConfig, node, fakeClient := validTestConfig(t, okToRebootNode())
 
 				firstCall := true
 
@@ -296,9 +291,9 @@ func Test_Running_agent(t *testing.T) {
 					return true, nil, expectedError
 				}
 
-				testConfig.Clientset.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor(method, "nodes", returnErrOnSecondCallF)
+				fakeClient.PrependReactor(method, "nodes", returnErrOnSecondCallF)
 
-				err = getAgentRunningError(t, testConfig)
+				err := getAgentRunningError(t, testConfig)
 				if !errors.Is(err, expectedError) {
 					t.Fatalf("Expected error %q when running agent, got: %v", expectedError, err)
 				}
@@ -311,12 +306,7 @@ func Test_Running_agent(t *testing.T) {
 			t.Run("getting_Node_object_fails", func(t *testing.T) {
 				t.Parallel()
 
-				testConfig := validTestConfig(t)
-
-				node, err := testConfig.Clientset.CoreV1().Nodes().Get(context.TODO(), testConfig.NodeName, metav1.GetOptions{})
-				if err != nil {
-					t.Fatalf("Failed getting test Node object: %v", err)
-				}
+				testConfig, node, fakeClient := validTestConfig(t, testNode())
 
 				callCounter := 0
 				// 1. Updating info labels. TODO: Could be done with patch instead.
@@ -337,9 +327,9 @@ func Test_Running_agent(t *testing.T) {
 					return true, nil, expectedError
 				}
 
-				testConfig.Clientset.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor("get", "*", returnErrOnFailingCallF)
+				fakeClient.PrependReactor("get", "*", returnErrOnFailingCallF)
 
-				err = getAgentRunningError(t, testConfig)
+				err := getAgentRunningError(t, testConfig)
 				if !errors.Is(err, expectedError) {
 					t.Fatalf("Expected error %q when running agent, got: %v", expectedError, err)
 				}
@@ -348,18 +338,14 @@ func Test_Running_agent(t *testing.T) {
 			t.Run("creating_Node_watcher_fails", func(t *testing.T) {
 				t.Parallel()
 
-				testConfig := validTestConfig(t)
-
-				node := okToRebootNode()
-
-				testConfig.Clientset = fake.NewSimpleClientset(node)
+				testConfig, _, fakeClient := validTestConfig(t, okToRebootNode())
 
 				expectedError := errors.New("creating watcher")
 				f := func(action k8stesting.Action) (handled bool, ret watch.Interface, err error) {
 					return true, nil, expectedError
 				}
 
-				testConfig.Clientset.CoreV1().(*fakecorev1.FakeCoreV1).PrependWatchReactor("*", f)
+				fakeClient.PrependWatchReactor("*", f)
 
 				err := getAgentRunningError(t, testConfig)
 				if !errors.Is(err, expectedError) {
@@ -394,16 +380,12 @@ func Test_Running_agent(t *testing.T) {
 					t.Run(n, func(t *testing.T) {
 						t.Parallel()
 
-						testConfig := validTestConfig(t)
+						testConfig, _, fakeClient := validTestConfig(t, okToRebootNode())
 
-						node := okToRebootNode()
-
-						testClient := fake.NewSimpleClientset(node)
-						testConfig.Clientset = testClient
-						watcher := watch.NewFake()
-						testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
-
-						go testCase.watchEvent(watcher)
+						// Mock sending custom watch event.
+						watcher := watch.NewFakeWithChanSize(1, true)
+						testCase.watchEvent(watcher)
+						fakeClient.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
 
 						err := getAgentRunningError(t, testConfig)
 						if err == nil {
@@ -421,14 +403,9 @@ func Test_Running_agent(t *testing.T) {
 		t.Run("marking_Node_schedulable_fails", func(t *testing.T) {
 			t.Parallel()
 
-			testConfig := validTestConfig(t)
+			testConfig, node, fakeClient := validTestConfig(t, nodeMadeUnschedulable())
 
-			node := nodeMadeUnschedulable()
-
-			testClient := fake.NewSimpleClientset(node)
-			testConfig.Clientset = testClient
-			watcher := watch.NewFake()
-			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+			withOkToRebootFalseUpdate(fakeClient, node)
 
 			expectedError := errors.New("Error marking node as schedulable")
 
@@ -443,40 +420,20 @@ func Test_Running_agent(t *testing.T) {
 				return true, nil, expectedError
 			}
 
-			testClient.Fake.PrependReactor("update", "nodes", errorOnNodeSchedulable)
+			fakeClient.PrependReactor("update", "nodes", errorOnNodeSchedulable)
 
-			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
-			defer cancel()
-
-			// Establish watch for node updates.
-			errCh := runAgent(ctx, t, testConfig)
-
-			// Mock operator action.
-			node.Annotations[constants.AnnotationOkToReboot] = constants.False
-
-			watcher.Modify(node)
-
-			select {
-			case <-ctx.Done():
-				t.Fatalf("Expected agent to exit before deadline")
-			case err := <-errCh:
-				if !errors.Is(err, expectedError) {
-					t.Fatalf("Expected error %q, got %q", expectedError, err)
-				}
+			err := getAgentRunningError(t, testConfig)
+			if !errors.Is(err, expectedError) {
+				t.Fatalf("Expected error %q, got %q", expectedError, err)
 			}
 		})
 
 		t.Run("updating_Node_annotations_after_marking_Node_schedulable_fails", func(t *testing.T) {
 			t.Parallel()
 
-			testConfig := validTestConfig(t)
+			testConfig, node, fakeClient := validTestConfig(t, nodeMadeUnschedulable())
 
-			node := nodeMadeUnschedulable()
-
-			testClient := fake.NewSimpleClientset(node)
-			testConfig.Clientset = testClient
-			watcher := watch.NewFake()
-			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+			withOkToRebootFalseUpdate(fakeClient, node)
 
 			expectedError := errors.New("Error marking node as schedulable")
 
@@ -491,54 +448,27 @@ func Test_Running_agent(t *testing.T) {
 				return true, nil, expectedError
 			}
 
-			testClient.Fake.PrependReactor("update", "nodes", errorOnNodeSchedulable)
+			fakeClient.PrependReactor("update", "nodes", errorOnNodeSchedulable)
 
-			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
-			defer cancel()
-
-			// Establish watch for node updates.
-			errCh := runAgent(ctx, t, testConfig)
-
-			// Mock operator action.
-			node.Annotations[constants.AnnotationOkToReboot] = constants.False
-
-			watcher.Modify(node)
-
-			select {
-			case <-ctx.Done():
-				t.Fatalf("Expected agent to exit before deadline")
-			case err := <-errCh:
-				if !errors.Is(err, expectedError) {
-					t.Fatalf("Expected error %q, got %q", expectedError, err)
-				}
+			err := getAgentRunningError(t, testConfig)
+			if !errors.Is(err, expectedError) {
+				t.Fatalf("Expected error %q, got %q", expectedError, err)
 			}
 		})
 
 		t.Run("getting_Node_object_after_ok_to_reboot_is_given", func(t *testing.T) {
 			t.Parallel()
 
-			testConfig := validTestConfig(t)
+			testConfig, node, fakeClient := validTestConfig(t, testNode())
 
-			node := testNode()
-
-			testClient := fake.NewSimpleClientset(node)
-			testConfig.Clientset = testClient
-			watcher := watch.NewFakeWithChanSize(1, true)
-
-			// Mock operator action.
-			updatedNode := node.DeepCopy()
-			updatedNode.Annotations[constants.AnnotationOkToReboot] = constants.True
-			updatedNode.Annotations[constants.AnnotationRebootNeeded] = constants.True
-			watcher.Modify(updatedNode)
-
-			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+			withOkToRebootTrueUpdate(fakeClient, node)
 
 			callCounter := 0
 			// 1. Updating info labels. TODO: Could be done with patch instead.
 			// 2. Checking made unschedulable.
 			// 3. Updating annotations and labels.
 			// 4. Getting initial state while waiting for ok-to-reboot.
-			// 5. Getting node object to mark it unscheduable etc.
+			// 5. Getting node object to mark it unschedulable etc.
 			failingGetCall := 5
 
 			expectedError := errors.New("Error getting node")
@@ -554,94 +484,51 @@ func Test_Running_agent(t *testing.T) {
 				return true, nil, expectedError
 			}
 
-			testClient.Fake.PrependReactor("get", "*", returnErrOnFailingCallF)
+			fakeClient.PrependReactor("get", "*", returnErrOnFailingCallF)
 
-			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
-			defer cancel()
-
-			// Establish watch for node updates.
-			errCh := runAgent(ctx, t, testConfig)
-
-			select {
-			case <-ctx.Done():
-				t.Fatalf("Expected agent to exit before deadline")
-			case err := <-errCh:
-				if err == nil {
-					t.Fatalf("Expected error %q, got %q", expectedError, err)
-				}
+			err := getAgentRunningError(t, testConfig)
+			if err == nil {
+				t.Fatalf("Expected error %q, got %q", expectedError, err)
 			}
 		})
 
 		t.Run("setting_reboot_in_progress_annotation_fails", func(t *testing.T) {
 			t.Parallel()
-			testConfig := validTestConfig(t)
 
-			node := testNode()
+			testConfig, node, fakeClient := validTestConfig(t, testNode())
 
-			testClient := fake.NewSimpleClientset(node)
-			testConfig.Clientset = testClient
-			watcher := watch.NewFakeWithChanSize(1, true)
+			withOkToRebootTrueUpdate(fakeClient, node)
 
-			// Mock operator action.
-			updatedNode := node.DeepCopy()
-			updatedNode.Annotations[constants.AnnotationOkToReboot] = constants.True
-			updatedNode.Annotations[constants.AnnotationRebootNeeded] = constants.True
-			watcher.Modify(updatedNode)
+			expectedError := errors.New("Error setting reboot in progress annotation")
 
-			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
-
-			expectedError := errors.New("Error marking node as unschedulable")
-
-			errorOnNodeSchedulable := func(action k8stesting.Action) (bool, runtime.Object, error) {
+			fakeClient.PrependReactor("update", "nodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
 				node, _ := action.(k8stesting.UpdateActionImpl).GetObject().(*corev1.Node)
 
-				if v, ok := node.Annotations[constants.AnnotationRebootInProgress]; !ok || v != constants.True {
-					return true, node, nil
+				if v, ok := node.Annotations[constants.AnnotationRebootInProgress]; ok && v == constants.True {
+					// If node is about to be marked as reboot is in progress, make error occur.
+					// For simplicity of logic, keep the happy path intended.
+					return true, nil, expectedError
 				}
 
-				// If node is about to be marked as reboot is in progress, make error occur.
-				return true, nil, expectedError
-			}
+				return true, node, nil
+			})
 
-			testClient.Fake.PrependReactor("update", "nodes", errorOnNodeSchedulable)
-
-			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
-			defer cancel()
-
-			// Establish watch for node updates.
-			errCh := runAgent(ctx, t, testConfig)
-
-			select {
-			case <-ctx.Done():
-				t.Fatalf("Expected agent to exit before deadline")
-			case err := <-errCh:
-				if !errors.Is(err, expectedError) {
-					t.Fatalf("Expected error %q, got %q", expectedError, err)
-				}
+			err := getAgentRunningError(t, testConfig)
+			if !errors.Is(err, expectedError) {
+				t.Fatalf("Expected error %q, got %q", expectedError, err)
 			}
 		})
 
 		t.Run("marking_Node_unschedulable_fails", func(t *testing.T) {
 			t.Parallel()
-			testConfig := validTestConfig(t)
 
-			node := testNode()
+			testConfig, node, fakeClient := validTestConfig(t, testNode())
 
-			testClient := fake.NewSimpleClientset(node)
-			testConfig.Clientset = testClient
-			watcher := watch.NewFakeWithChanSize(1, true)
-
-			// Mock operator action.
-			updatedNode := node.DeepCopy()
-			updatedNode.Annotations[constants.AnnotationOkToReboot] = constants.True
-			updatedNode.Annotations[constants.AnnotationRebootNeeded] = constants.True
-			watcher.Modify(updatedNode)
-
-			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+			withOkToRebootTrueUpdate(fakeClient, node)
 
 			expectedError := errors.New("Error marking node as unschedulable")
 
-			errorOnNodeSchedulable := func(action k8stesting.Action) (bool, runtime.Object, error) {
+			fakeClient.PrependReactor("update", "nodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
 				node, _ := action.(k8stesting.UpdateActionImpl).GetObject().(*corev1.Node)
 
 				if !node.Spec.Unschedulable {
@@ -650,32 +537,18 @@ func Test_Running_agent(t *testing.T) {
 
 				// If node is about to be marked as unschedulable, make error occur.
 				return true, nil, expectedError
-			}
+			})
 
-			testClient.Fake.PrependReactor("update", "nodes", errorOnNodeSchedulable)
-
-			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
-			defer cancel()
-
-			// Establish watch for node updates.
-			errCh := runAgent(ctx, t, testConfig)
-
-			select {
-			case <-ctx.Done():
-				t.Fatalf("Expected agent to exit before deadline")
-			case err := <-errCh:
-				if !errors.Is(err, expectedError) {
-					t.Fatalf("Expected error %q, got %q", expectedError, err)
-				}
+			err := getAgentRunningError(t, testConfig)
+			if !errors.Is(err, expectedError) {
+				t.Fatalf("Expected error %q, got %q", expectedError, err)
 			}
 		})
 	})
 }
 
-func validTestConfig(t *testing.T) *agent.Config {
+func validTestConfig(t *testing.T, node *corev1.Node) (*agent.Config, *corev1.Node, *k8stesting.Fake) {
 	t.Helper()
-
-	node := testNode()
 
 	files := map[string]string{
 		"/usr/share/flatcar/update.conf": "GROUP=imageGroup",
@@ -687,13 +560,15 @@ func validTestConfig(t *testing.T) *agent.Config {
 
 	createTestFiles(t, files, hostFilesPrefix)
 
+	fakeClient := fake.NewSimpleClientset(node)
+
 	return &agent.Config{
-		Clientset:       fake.NewSimpleClientset(node),
+		Clientset:       fakeClient,
 		StatusReceiver:  &mockStatusReceiver{},
 		Rebooter:        &mockRebooter{},
 		NodeName:        node.Name,
 		HostFilesPrefix: hostFilesPrefix,
-	}
+	}, node, &fakeClient.Fake
 }
 
 type mockStatusReceiver struct{}
@@ -832,4 +707,21 @@ func testNode() *corev1.Node {
 			Annotations: map[string]string{},
 		},
 	}
+}
+
+func withOkToRebootTrueUpdate(fakeClient *k8stesting.Fake, node *corev1.Node) {
+	watcher := watch.NewFakeWithChanSize(1, true)
+	updatedNode := node.DeepCopy()
+	updatedNode.Annotations[constants.AnnotationOkToReboot] = constants.True
+	updatedNode.Annotations[constants.AnnotationRebootNeeded] = constants.True
+	watcher.Modify(updatedNode)
+	fakeClient.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+}
+
+func withOkToRebootFalseUpdate(fakeClient *k8stesting.Fake, node *corev1.Node) {
+	watcher := watch.NewFakeWithChanSize(1, true)
+	updatedNode := node.DeepCopy()
+	updatedNode.Annotations[constants.AnnotationOkToReboot] = constants.False
+	watcher.Modify(updatedNode)
+	fakeClient.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
 }

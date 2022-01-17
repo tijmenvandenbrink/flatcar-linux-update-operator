@@ -28,7 +28,7 @@ import (
 func Test_Creating_new_agent(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns_agent_when_all_dependencies_are_satisfied", func(t *testing.T) {
+	t.Run("succeeds_when_all_dependencies_are_satisfied", func(t *testing.T) {
 		t.Parallel()
 
 		validConfig, _, _ := validTestConfig(t, testNode())
@@ -42,7 +42,7 @@ func Test_Creating_new_agent(t *testing.T) {
 		}
 	})
 
-	t.Run("returns_error_when", func(t *testing.T) {
+	t.Run("fails_when", func(t *testing.T) {
 		t.Parallel()
 
 		cases := map[string]func(*agent.Config){
@@ -156,7 +156,7 @@ func Test_Running_agent(t *testing.T) {
 		assertLabelValue(ctx, t, done, testConfig, constants.LabelGroup, expectedGroup)
 	})
 
-	t.Run("ignores_when_etcd_update_configuration_file_does_not_exist", func(t *testing.T) {
+	t.Run("ignores_when_etc_update_configuration_file_does_not_exist", func(t *testing.T) {
 		t.Parallel()
 
 		testConfig, _, _ := validTestConfig(t, testNode())
@@ -183,7 +183,7 @@ func Test_Running_agent(t *testing.T) {
 		assertLabelValue(ctx, t, done, testConfig, constants.LabelGroup, expectedGroup)
 	})
 
-	t.Run("updates_associated_Node_object_with_host_information_by", func(t *testing.T) {
+	t.Run("updates_associated_Node_object_on_start_with_host_information_by", func(t *testing.T) {
 		t.Parallel()
 
 		// t.Log(updatedNode.Annotations[constants.AnnotationRebootNeeded])
@@ -202,7 +202,7 @@ func Test_Running_agent(t *testing.T) {
 		})
 	})
 
-	t.Run("returns_error_when", func(t *testing.T) {
+	t.Run("stops_with_error_when", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("configured_Node_does_not_exist", func(t *testing.T) {
@@ -536,6 +536,25 @@ func Test_Running_agent(t *testing.T) {
 				}
 
 				// If node is about to be marked as unschedulable, make error occur.
+				return true, nil, expectedError
+			})
+
+			err := getAgentRunningError(t, testConfig)
+			if !errors.Is(err, expectedError) {
+				t.Fatalf("Expected error %q, got %q", expectedError, err)
+			}
+		})
+
+		t.Run("getting_nodes_for_deletion_fails", func(t *testing.T) {
+			t.Parallel()
+
+			testConfig, node, fakeClient := validTestConfig(t, testNode())
+
+			withOkToRebootTrueUpdate(fakeClient, node)
+
+			expectedError := errors.New("Error getting pods for deletion")
+
+			fakeClient.PrependReactor("list", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
 				return true, nil, expectedError
 			})
 

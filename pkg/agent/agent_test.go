@@ -210,10 +210,6 @@ func Test_Running_agent(t *testing.T) {
 			configWithNoNodeObject.Clientset = fake.NewSimpleClientset()
 
 			err := getAgentRunningError(t, configWithNoNodeObject)
-			if err == nil {
-				t.Fatalf("Expected agent to return an error")
-			}
-
 			if !apierrors.IsNotFound(err) {
 				t.Fatalf("Expected Node not found error when running agent, got: %v", err)
 			}
@@ -232,10 +228,6 @@ func Test_Running_agent(t *testing.T) {
 				}
 
 				err := getAgentRunningError(t, testConfig)
-				if err == nil {
-					t.Fatalf("Expected agent to return an error")
-				}
-
 				if !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("Expected file not found error, got: %v", err)
 				}
@@ -253,10 +245,6 @@ func Test_Running_agent(t *testing.T) {
 				}
 
 				err := getAgentRunningError(t, testConfig)
-				if err == nil {
-					t.Fatalf("Expected agent to return an error")
-				}
-
 				if !errors.Is(err, os.ErrPermission) {
 					t.Fatalf("Expected file not found error, got: %v", err)
 				}
@@ -272,10 +260,6 @@ func Test_Running_agent(t *testing.T) {
 				}
 
 				err := getAgentRunningError(t, testConfig)
-				if err == nil {
-					t.Fatalf("Expected agent to return an error")
-				}
-
 				if !errors.Is(err, os.ErrPermission) {
 					t.Fatalf("Expected file not found error, got: %v", err)
 				}
@@ -315,10 +299,6 @@ func Test_Running_agent(t *testing.T) {
 				testConfig.Clientset.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor(method, "nodes", returnErrOnSecondCallF)
 
 				err = getAgentRunningError(t, testConfig)
-				if err == nil {
-					t.Fatalf("Expected agent to return an error")
-				}
-
 				if !errors.Is(err, expectedError) {
 					t.Fatalf("Expected error %q when running agent, got: %v", expectedError, err)
 				}
@@ -339,6 +319,9 @@ func Test_Running_agent(t *testing.T) {
 				}
 
 				callCounter := 0
+				// 1. Updating info labels. TODO: Could be done with patch instead.
+				// 2. Checking made unschedulable.
+				// 3. Updating annotations and labels.
 				failingGetCall := 3
 
 				expectedError := errors.New("Error getting node")
@@ -357,10 +340,6 @@ func Test_Running_agent(t *testing.T) {
 				testConfig.Clientset.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor("get", "*", returnErrOnFailingCallF)
 
 				err = getAgentRunningError(t, testConfig)
-				if err == nil {
-					t.Fatalf("Expected agent to return an error")
-				}
-
 				if !errors.Is(err, expectedError) {
 					t.Fatalf("Expected error %q when running agent, got: %v", expectedError, err)
 				}
@@ -371,16 +350,7 @@ func Test_Running_agent(t *testing.T) {
 
 				testConfig := validTestConfig(t)
 
-				node := &corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: testConfig.NodeName,
-						// TODO: Fix code to handle Node objects with no labels and annotations?
-						Labels: map[string]string{},
-						Annotations: map[string]string{
-							constants.AnnotationOkToReboot: constants.True,
-						},
-					},
-				}
+				node := okToRebootNode()
 
 				testConfig.Clientset = fake.NewSimpleClientset(node)
 
@@ -392,10 +362,6 @@ func Test_Running_agent(t *testing.T) {
 				testConfig.Clientset.CoreV1().(*fakecorev1.FakeCoreV1).PrependWatchReactor("*", f)
 
 				err := getAgentRunningError(t, testConfig)
-				if err == nil {
-					t.Fatalf("Expected error running agent")
-				}
-
 				if !errors.Is(err, expectedError) {
 					t.Fatalf("Expected error %q running agent, got %q", expectedError, err)
 				}
@@ -430,16 +396,7 @@ func Test_Running_agent(t *testing.T) {
 
 						testConfig := validTestConfig(t)
 
-						node := &corev1.Node{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: testConfig.NodeName,
-								// TODO: Fix code to handle Node objects with no labels and annotations?
-								Labels: map[string]string{},
-								Annotations: map[string]string{
-									constants.AnnotationOkToReboot: constants.True,
-								},
-							},
-						}
+						node := okToRebootNode()
 
 						testClient := fake.NewSimpleClientset(node)
 						testConfig.Clientset = testClient
@@ -459,68 +416,258 @@ func Test_Running_agent(t *testing.T) {
 					})
 				}
 			})
+		})
 
-			t.Run("marking_Node_schedulable_fails", func(t *testing.T) {
-				t.Parallel()
+		t.Run("marking_Node_schedulable_fails", func(t *testing.T) {
+			t.Parallel()
 
-				testConfig := validTestConfig(t)
+			testConfig := validTestConfig(t)
 
-				node := &corev1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: testConfig.NodeName,
-						// TODO: Fix code to handle Node objects with no labels and annotations?
-						Labels: map[string]string{},
-						Annotations: map[string]string{
-							constants.AnnotationOkToReboot:             constants.True,
-							constants.AnnotationAgentMadeUnschedulable: constants.True,
-						},
-					},
-					Spec: corev1.NodeSpec{
-						Unschedulable: true,
-					},
+			node := nodeMadeUnschedulable()
+
+			testClient := fake.NewSimpleClientset(node)
+			testConfig.Clientset = testClient
+			watcher := watch.NewFake()
+			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+
+			expectedError := errors.New("Error marking node as schedulable")
+
+			errorOnNodeSchedulable := func(action k8stesting.Action) (bool, runtime.Object, error) {
+				node, _ := action.(k8stesting.UpdateActionImpl).GetObject().(*corev1.Node)
+
+				if node.Spec.Unschedulable {
+					return true, node, nil
 				}
 
-				testClient := fake.NewSimpleClientset(node)
-				testConfig.Clientset = testClient
-				watcher := watch.NewFake()
-				testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+				// If node is about to be marked as schedulable, make error occur.
+				return true, nil, expectedError
+			}
 
-				expectedError := errors.New("Error marking node as schedulable")
+			testClient.Fake.PrependReactor("update", "nodes", errorOnNodeSchedulable)
 
-				errorOnNodeSchedulable := func(action k8stesting.Action) (bool, runtime.Object, error) {
-					node, _ := action.(k8stesting.UpdateActionImpl).GetObject().(*corev1.Node)
+			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
+			defer cancel()
 
-					if node.Spec.Unschedulable {
-						return true, node, nil
-					}
+			// Establish watch for node updates.
+			errCh := runAgent(ctx, t, testConfig)
 
-					// If node is about to be marked as schedulable, make error occur.
-					return true, nil, expectedError
+			// Mock operator action.
+			node.Annotations[constants.AnnotationOkToReboot] = constants.False
+
+			watcher.Modify(node)
+
+			select {
+			case <-ctx.Done():
+				t.Fatalf("Expected agent to exit before deadline")
+			case err := <-errCh:
+				if !errors.Is(err, expectedError) {
+					t.Fatalf("Expected error %q, got %q", expectedError, err)
+				}
+			}
+		})
+
+		t.Run("updating_Node_annotations_after_marking_Node_schedulable_fails", func(t *testing.T) {
+			t.Parallel()
+
+			testConfig := validTestConfig(t)
+
+			node := nodeMadeUnschedulable()
+
+			testClient := fake.NewSimpleClientset(node)
+			testConfig.Clientset = testClient
+			watcher := watch.NewFake()
+			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+
+			expectedError := errors.New("Error marking node as schedulable")
+
+			errorOnNodeSchedulable := func(action k8stesting.Action) (bool, runtime.Object, error) {
+				node, _ := action.(k8stesting.UpdateActionImpl).GetObject().(*corev1.Node)
+
+				if node.Annotations[constants.AnnotationAgentMadeUnschedulable] != constants.False {
+					return true, node, nil
 				}
 
-				testClient.Fake.PrependReactor("update", "nodes", errorOnNodeSchedulable)
+				// If node is about to be annotated as no longer made unschedulable by agent, make error occur.
+				return true, nil, expectedError
+			}
 
-				ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
-				defer cancel()
+			testClient.Fake.PrependReactor("update", "nodes", errorOnNodeSchedulable)
 
-				// Establish watch for node updates.
-				errCh := runAgent(ctx, t, testConfig)
+			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
+			defer cancel()
 
-				// Mock operator action.
-				node.Annotations[constants.AnnotationOkToReboot] = constants.False
+			// Establish watch for node updates.
+			errCh := runAgent(ctx, t, testConfig)
 
-				watcher.Modify(node)
+			// Mock operator action.
+			node.Annotations[constants.AnnotationOkToReboot] = constants.False
 
-				select {
-				case <-ctx.Done():
-					// t.Logf("Expected agent to exit before deadline")
-					return
-				case err := <-errCh:
-					if err == nil {
-						t.Fatalf("Expected agent error: %v", err)
-					}
+			watcher.Modify(node)
+
+			select {
+			case <-ctx.Done():
+				t.Fatalf("Expected agent to exit before deadline")
+			case err := <-errCh:
+				if !errors.Is(err, expectedError) {
+					t.Fatalf("Expected error %q, got %q", expectedError, err)
 				}
-			})
+			}
+		})
+
+		t.Run("getting_Node_object_after_ok_to_reboot_is_given", func(t *testing.T) {
+			t.Parallel()
+
+			testConfig := validTestConfig(t)
+
+			node := testNode()
+
+			testClient := fake.NewSimpleClientset(node)
+			testConfig.Clientset = testClient
+			watcher := watch.NewFakeWithChanSize(1, true)
+
+			// Mock operator action.
+			updatedNode := node.DeepCopy()
+			updatedNode.Annotations[constants.AnnotationOkToReboot] = constants.True
+			updatedNode.Annotations[constants.AnnotationRebootNeeded] = constants.True
+			watcher.Modify(updatedNode)
+
+			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+
+			callCounter := 0
+			// 1. Updating info labels. TODO: Could be done with patch instead.
+			// 2. Checking made unschedulable.
+			// 3. Updating annotations and labels.
+			// 4. Getting initial state while waiting for ok-to-reboot.
+			// 5. Getting node object to mark it unscheduable etc.
+			failingGetCall := 5
+
+			expectedError := errors.New("Error getting node")
+
+			returnErrOnFailingCallF := func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {
+				// TODO: Make implementation smarter.
+				if callCounter != failingGetCall {
+					callCounter++
+
+					return true, node, nil
+				}
+
+				return true, nil, expectedError
+			}
+
+			testClient.Fake.PrependReactor("get", "*", returnErrOnFailingCallF)
+
+			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
+			defer cancel()
+
+			// Establish watch for node updates.
+			errCh := runAgent(ctx, t, testConfig)
+
+			select {
+			case <-ctx.Done():
+				t.Fatalf("Expected agent to exit before deadline")
+			case err := <-errCh:
+				if err == nil {
+					t.Fatalf("Expected error %q, got %q", expectedError, err)
+				}
+			}
+		})
+
+		t.Run("setting_reboot_in_progress_annotation_fails", func(t *testing.T) {
+			t.Parallel()
+			testConfig := validTestConfig(t)
+
+			node := testNode()
+
+			testClient := fake.NewSimpleClientset(node)
+			testConfig.Clientset = testClient
+			watcher := watch.NewFakeWithChanSize(1, true)
+
+			// Mock operator action.
+			updatedNode := node.DeepCopy()
+			updatedNode.Annotations[constants.AnnotationOkToReboot] = constants.True
+			updatedNode.Annotations[constants.AnnotationRebootNeeded] = constants.True
+			watcher.Modify(updatedNode)
+
+			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+
+			expectedError := errors.New("Error marking node as unschedulable")
+
+			errorOnNodeSchedulable := func(action k8stesting.Action) (bool, runtime.Object, error) {
+				node, _ := action.(k8stesting.UpdateActionImpl).GetObject().(*corev1.Node)
+
+				if v, ok := node.Annotations[constants.AnnotationRebootInProgress]; !ok || v != constants.True {
+					return true, node, nil
+				}
+
+				// If node is about to be marked as reboot is in progress, make error occur.
+				return true, nil, expectedError
+			}
+
+			testClient.Fake.PrependReactor("update", "nodes", errorOnNodeSchedulable)
+
+			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
+			defer cancel()
+
+			// Establish watch for node updates.
+			errCh := runAgent(ctx, t, testConfig)
+
+			select {
+			case <-ctx.Done():
+				t.Fatalf("Expected agent to exit before deadline")
+			case err := <-errCh:
+				if !errors.Is(err, expectedError) {
+					t.Fatalf("Expected error %q, got %q", expectedError, err)
+				}
+			}
+		})
+
+		t.Run("marking_Node_unschedulable_fails", func(t *testing.T) {
+			t.Parallel()
+			testConfig := validTestConfig(t)
+
+			node := testNode()
+
+			testClient := fake.NewSimpleClientset(node)
+			testConfig.Clientset = testClient
+			watcher := watch.NewFakeWithChanSize(1, true)
+
+			// Mock operator action.
+			updatedNode := node.DeepCopy()
+			updatedNode.Annotations[constants.AnnotationOkToReboot] = constants.True
+			updatedNode.Annotations[constants.AnnotationRebootNeeded] = constants.True
+			watcher.Modify(updatedNode)
+
+			testClient.Fake.PrependWatchReactor("nodes", k8stesting.DefaultWatchReactor(watcher, nil))
+
+			expectedError := errors.New("Error marking node as unschedulable")
+
+			errorOnNodeSchedulable := func(action k8stesting.Action) (bool, runtime.Object, error) {
+				node, _ := action.(k8stesting.UpdateActionImpl).GetObject().(*corev1.Node)
+
+				if !node.Spec.Unschedulable {
+					return true, node, nil
+				}
+
+				// If node is about to be marked as unschedulable, make error occur.
+				return true, nil, expectedError
+			}
+
+			testClient.Fake.PrependReactor("update", "nodes", errorOnNodeSchedulable)
+
+			ctx, cancel := context.WithTimeout(contextWithDeadline(t), 500*time.Millisecond)
+			defer cancel()
+
+			// Establish watch for node updates.
+			errCh := runAgent(ctx, t, testConfig)
+
+			select {
+			case <-ctx.Done():
+				t.Fatalf("Expected agent to exit before deadline")
+			case err := <-errCh:
+				if !errors.Is(err, expectedError) {
+					t.Fatalf("Expected error %q, got %q", expectedError, err)
+				}
+			}
 		})
 	})
 }
@@ -528,14 +675,7 @@ func Test_Running_agent(t *testing.T) {
 func validTestConfig(t *testing.T) *agent.Config {
 	t.Helper()
 
-	node := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "testNodeName",
-			// TODO: Fix code to handle Node objects with no labels and annotations?
-			Labels:      map[string]string{},
-			Annotations: map[string]string{},
-		},
-	}
+	node := testNode()
 
 	files := map[string]string{
 		"/usr/share/flatcar/update.conf": "GROUP=imageGroup",
@@ -663,4 +803,33 @@ func getAgentRunningError(t *testing.T, config *agent.Config) error {
 	}
 
 	return nil
+}
+
+func okToRebootNode() *corev1.Node {
+	node := testNode()
+
+	node.Annotations[constants.AnnotationOkToReboot] = constants.True
+
+	return node
+}
+
+func nodeMadeUnschedulable() *corev1.Node {
+	node := testNode()
+
+	node.Annotations[constants.AnnotationOkToReboot] = constants.True
+	node.Annotations[constants.AnnotationAgentMadeUnschedulable] = constants.True
+	node.Spec.Unschedulable = true
+
+	return node
+}
+
+func testNode() *corev1.Node {
+	return &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "testNodeName",
+			// TODO: Fix code to handle Node objects with no labels and annotations?
+			Labels:      map[string]string{},
+			Annotations: map[string]string{},
+		},
+	}
 }

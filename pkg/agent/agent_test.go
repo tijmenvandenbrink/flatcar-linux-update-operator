@@ -271,7 +271,7 @@ func Test_Running_agent(t *testing.T) {
 
 	t.Run("logs_error_when", func(t *testing.T) {
 		// TODO: Those are not hard errors, we should probably test that the tests are logged at least.
-		// Alternatively we can test that those errros do not cause agent to exit.
+		// Alternatively we can test that those errors do not cause agent to exit.
 		t.Run("waiting_for_ok_to_reboot_annotation_fails_by", func(t *testing.T) {
 			t.Parallel()
 		})

@@ -183,21 +183,100 @@ func Test_Running_agent(t *testing.T) {
 		assertLabelValue(ctx, t, done, testConfig, constants.LabelGroup, expectedGroup)
 	})
 
-	t.Run("updates_associated_Node_object_on_start_with_host_information_by", func(t *testing.T) {
+	t.Run("on_start", func(t *testing.T) {
+		t.Run("updates_associated_Node_object_with_host_information_by", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("setting_OS_ID_label", func(t *testing.T) {
+				t.Parallel()
+			})
+
+			t.Run("setting_Flatcar_group_label", func(t *testing.T) {
+				t.Parallel()
+			})
+
+			t.Run("setting_Flatcar_version_label", func(t *testing.T) {
+				t.Parallel()
+			})
+		})
+
+		t.Run("sets_reboot_in_progress,_reboot_needed_annotations_and_reboot_needed_label_to_false", func(t *testing.T) {
+			t.Parallel()
+
+			// t.Log(updatedNode.Annotations[constants.AnnotationRebootNeeded])
+			// t.Log(updatedNode.Annotations[constants.AnnotationRebootInProgress])
+			// t.Log(updatedNode.Labels[constants.LabelRebootNeeded])
+		})
+	})
+
+	t.Run("waits_for_not_ok_to_reboot_annotation_from_operator_after_updating_node_information", func(t *testing.T) {
+		t.Parallel()
+	})
+
+	t.Run("marks_node_as_schedulable_if_it_has_agent_made_unschedulable_annotation", func(t *testing.T) {
+		t.Parallel()
+	})
+
+	t.Run("after_getting_not_ok_to_reboot_annotation", func(t *testing.T) {
 		t.Parallel()
 
-		// t.Log(updatedNode.Annotations[constants.AnnotationRebootNeeded])
-		// t.Log(updatedNode.Annotations[constants.AnnotationRebootInProgress])
-		// t.Log(updatedNode.Labels[constants.LabelRebootNeeded])
-		t.Run("setting_OS_ID_label", func(t *testing.T) {
+		t.Run("updates_node_information_when_update_enging_produces_updated_status", func(t *testing.T) {
 			t.Parallel()
 		})
 
-		t.Run("setting_Flatcar_group_label", func(t *testing.T) {
+		t.Run("waits_for_ok_to_reboot_annotation_from_operator", func(t *testing.T) {
+			t.Parallel()
+		})
+	})
+
+	t.Run("after_getting_ok_to_reboot_annotation", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("marks_node_as_unschedulable_by", func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("setting_unschedulable_field_on_Node_object", func(t *testing.T) {
+				t.Parallel()
+			})
+
+			t.Run("setting_reboot_in_progress_and_agent_made_unschedulable_annotations_to_true", func(t *testing.T) {
+				t.Parallel()
+			})
+		})
+	})
+
+	t.Run("after_marking_node_as_unschedulable", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("remove_pods_scheduled_on_running_node", func(t *testing.T) {
 			t.Parallel()
 		})
 
-		t.Run("setting_Flatcar_version_label", func(t *testing.T) {
+		t.Run("waits_for_all_pods_scheduled_on_running_node_to_terminate", func(t *testing.T) {
+			t.Parallel()
+		})
+	})
+
+	t.Run("after_draining_node", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("triggers_a_reboot", func(t *testing.T) {
+			t.Parallel()
+		})
+
+		t.Run("waits_until_termination_signal_comes", func(t *testing.T) {
+			t.Parallel()
+		})
+	})
+
+	t.Run("logs_error_when", func(t *testing.T) {
+		// TODO: Those are not hard errors, we should probably test that the tests are logged at least.
+		// Alternatively we can test that those errros do not cause agent to exit.
+		t.Run("waiting_for_ok_to_reboot_annotation_fails_by", func(t *testing.T) {
+			t.Parallel()
+		})
+
+		t.Run("removing_pod_on_node_fails", func(t *testing.T) {
 			t.Parallel()
 		})
 	})
